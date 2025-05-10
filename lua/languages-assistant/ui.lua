@@ -62,7 +62,9 @@ end
 
 -- Display loading indicator
 function M.set_loading_content(buf, query)
-    if not vim.api.nvim_buf_is_valid(buf) then return end
+    -- Use pcall to safely check buffer validity
+    local ok, is_valid = pcall(vim.api.nvim_buf_is_valid, buf)
+    if not ok or not is_valid then return end
     
     -- Get icon if enabled
     local loading_icon = ""
@@ -71,34 +73,49 @@ function M.set_loading_content(buf, query)
     end
     
     -- Set content
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-        loading_icon .. "Loading...",
-        "",
-        "Query: " .. query
-    })
+    local ok, _ = pcall(function()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            loading_icon .. "Loading...",
+            "",
+            "Query: " .. query
+        })
+        
+        -- Make buffer modifiable
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    end)
     
-    -- Make buffer modifiable
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    if not ok then
+        vim.notify("Failed to set loading content", vim.log.levels.ERROR)
+    end
 end
 
 -- Update window with content
 function M.update_content(buf, content)
-    if not vim.api.nvim_buf_is_valid(buf) then return end
+    -- Use pcall to safely check buffer validity
+    local ok, is_valid = pcall(vim.api.nvim_buf_is_valid, buf)
+    if not ok or not is_valid then return end
     
-    -- Make buffer modifiable
-    vim.api.nvim_buf_set_option(buf, "modifiable", true)
+    -- Perform all buffer operations inside pcall
+    local ok, err = pcall(function()
+        -- Make buffer modifiable
+        vim.api.nvim_buf_set_option(buf, "modifiable", true)
+        
+        -- Split content into lines
+        local lines = {}
+        for line in content:gmatch("[^\r\n]+") do
+            table.insert(lines, line)
+        end
+        
+        -- Update buffer
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        
+        -- Make buffer non-modifiable again
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    end)
     
-    -- Split content into lines
-    local lines = {}
-    for line in content:gmatch("[^\r\n]+") do
-        table.insert(lines, line)
+    if not ok then
+        vim.notify("Failed to update content: " .. (err or "unknown error"), vim.log.levels.ERROR)
     end
-    
-    -- Update buffer
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    
-    -- Make buffer non-modifiable again
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
 end
 
 -- Show history window

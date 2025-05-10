@@ -139,19 +139,21 @@ function M.explain_selection()
     
     -- Request explanation via API
     modules.api().get_explanation(text, function(explanation)
-        -- Update UI with result
-        if vim.api.nvim_buf_is_valid(buf) then
-            modules.ui().update_content(buf, explanation)
-            
-            -- Add to history
-            modules.history().add_entry({
-                type = "explanation",
-                text = text,
-                result = explanation,
-                timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-                context = vim.fn.expand("%:p")
-            })
-        end
+        -- Update UI with result - use vim.schedule to defer to a safe context
+        vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(buf) then
+                modules.ui().update_content(buf, explanation)
+                
+                -- Add to history
+                modules.history().add_entry({
+                    type = "explanation",
+                    text = text,
+                    result = explanation,
+                    timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                    context = vim.fn.expand("%:p")
+                })
+            end
+        end)
     end)
 end
 
@@ -170,20 +172,22 @@ function M.translate_text()
     
     -- Request translation via API
     modules.api().translate_text(text, M.config.languages.target, function(translation)
-        -- Update UI with result
-        if vim.api.nvim_buf_is_valid(buf) then
-            modules.ui().update_content(buf, translation)
-            
-            -- Add to history
-            modules.history().add_entry({
-                type = "translation",
-                text = text,
-                result = translation,
-                timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-                source_lang = M.config.languages.source,
-                target_lang = M.config.languages.target
-            })
-        end
+        -- Update UI with result - use vim.schedule to defer to a safe context
+        vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(buf) then
+                modules.ui().update_content(buf, translation)
+                
+                -- Add to history
+                modules.history().add_entry({
+                    type = "translation",
+                    text = text,
+                    result = translation,
+                    timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                    source_lang = M.config.languages.source,
+                    target_lang = M.config.languages.target
+                })
+            end
+        end)
     end)
 end
 
