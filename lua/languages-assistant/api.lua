@@ -62,12 +62,11 @@ local function extract_explanation(response)
         return "No explanation available: Empty response"
     end
     
-    -- Log raw response for debugging (truncated for clarity)
-    local truncated_response = response:sub(1, 200) .. (response:len() > 200 and "..." or "")
-    vim.notify("Raw API response (truncated): " .. truncated_response, vim.log.levels.DEBUG)
+    -- Log raw response for debugging - include the full response for now
+    vim.notify("Raw API response: " .. response, vim.log.levels.DEBUG)
     
     -- Check for common API error patterns
-    if response:match("error") then
+    if response:match('"error"') then
         -- Log the full response for debugging
         vim.notify("API Error detected in response", vim.log.levels.ERROR)
         
@@ -97,12 +96,15 @@ local function extract_explanation(response)
     local content = ""
     
     if parent.config.api.provider == "gemini" then
+        vim.notify("Parsing Gemini API response: " .. vim.inspect(parsed), vim.log.levels.DEBUG)
+        
         if parsed.candidates and parsed.candidates[1] and 
            parsed.candidates[1].content and 
            parsed.candidates[1].content.parts then
             for _, part in ipairs(parsed.candidates[1].content.parts) do
                 if part.text then
                     content = content .. part.text
+                    vim.notify("Extracted text content: " .. part.text:sub(1, 100), vim.log.levels.DEBUG)
                 end
             end
             vim.notify("Successfully extracted Gemini API response content", vim.log.levels.DEBUG)
@@ -195,6 +197,9 @@ local function make_api_request(prompt, callback)
                 maxOutputTokens = 1000,
             }
         })
+        
+        -- Log the request body for debugging
+        vim.notify("Gemini request body: " .. request_body, vim.log.levels.DEBUG)
     elseif config.provider == "openai" then
         request_body = vim.fn.json_encode({
             model = "gpt-3.5-turbo",
@@ -234,6 +239,20 @@ local function make_api_request(prompt, callback)
             temp_file,
             error_file
         )
+        
+        -- Also try a direct curl command similar to our working example
+        vim.notify("Executing curl for Gemini API", vim.log.levels.DEBUG)
+        
+        -- Create a special test command for the API output
+        local testcmd = string.format(
+            "curl -s -X POST '%s?key=%s' " ..
+            "-H 'Content-Type: application/json' " ..
+            "-d '%s'",
+            API_ENDPOINT,
+            API_KEY,
+            request_body:gsub("'", "\\''") -- Escape single quotes
+        )
+        vim.notify("Full curl command (sanitized): " .. testcmd:gsub(API_KEY, "***KEY***"), vim.log.levels.DEBUG)
     elseif config.provider == "openai" then
         cmd = string.format(
             "curl -s -X POST '%s' " ..
@@ -431,7 +450,7 @@ NOTES:
     -- Show a notification that we're requesting
     vim.notify("Translating to " .. target_language .. ": " .. text, vim.log.levels.INFO)
     
-    -- Make the API request with proper error handling
+    -- First try the standard API method
     make_api_request(formatted_prompt, function(response)
         -- Add more detailed logging for debugging
         vim.notify("Received API response of length: " .. #response, vim.log.levels.DEBUG)
@@ -439,23 +458,12 @@ NOTES:
         -- Check if response indicates an error
         if response:match("Failed to") or response:match("API Error") or response:match("failed with exit code") then
             -- Log the error response for debugging
-            vim.notify("Translation API error: " .. response, vim.log.levels.ERROR)
+            vim.notify("Translation API error, trying direct method as fallback", vim.log.levels.WARN)
             
-            -- Provide a more helpful fallback translation message
-            local fallback = string.format([[
-TRANSLATION:
-Translation failed for text: "%s"
-
-POSSIBLE ISSUES:
-- API key configuration: Check if your API key is set correctly
-- Network connectivity: Ensure you have an active internet connection
-- Rate limiting: You might have exceeded your quota of API requests
-- Service availability: The API service might be temporarily unavailable
-
-Try again later or check the error logs for more details.
-]], text)
-            
-            callback(fallback)
+            -- Try the direct method as a fallback
+            M.direct_test_translation(text, target_language, function(direct_result)
+                callback(direct_result)
+            end)
         else
             -- Log success but with truncated response for brevity
             local truncated = response:sub(1, 100) .. (response:len() > 100 and "..." or "")
@@ -485,5 +493,108 @@ function M.test_connection(silent)
         end
     end)
 end
+
+-- Function to directly test translation with an optimized curl command
+function M.direct_test_translation(text, target_language, callback)
+    local API_KEY = get_api_key()
+    if API_KEY == "" then
+        callback("No API key found")
+        return
+    end
+    
+    -- Format the prompt for translation
+    local formatted_prompt = string.format([[
+Translate the following text from %s into %s:
+
+"%s"
+
+Please respond with this exact format:
+TRANSLATION:
+[Your translation]
+
+PRONUNCIATION GUIDE:
+[Brief pronunciation help if needed]
+
+NOTES:
+- Alternative translations (if applicable)
+- Any cultural context important for understanding
+]], parent.config.languages.source, target_language, text)
+
+    -- Create request body JSON
+    local request_body = vim.fn.json_encode({
+        contents = {
+            {
+                parts = {
+                    { text = formatted_prompt }
+                }
+            }
+        }
+    })
+    
+    -- Create a temp file for the response
+    local temp_file = vim.fn.tempname()
+    
+    -- Build the curl command
+    local cmd = string.format(
+        "curl -s -X POST 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s' -H 'Content-Type: application/json' -d '%s' > %s",
+        API_KEY,
+        request_body:gsub("'", "\\'"),
+        temp_file
+    )
+    
+    -- Log the command for debugging (with API key masked)
+    local masked_cmd = cmd:gsub(API_KEY, "***API_KEY***")
+    vim.notify("Direct test command: " .. masked_cmd, vim.log.levels.DEBUG)
+    
+    -- Run the curl command directly
+    vim.fn.system(cmd)
+    
+    -- Read the response
+    local file = io.open(temp_file, "r")
+    if not file then
+        callback("Failed to read response file")
+        return
+    end
+    
+    local response = file:read("*all")
+    file:close()
+    os.remove(temp_file)
+    
+    -- Try to parse the response
+    local ok, parsed = pcall(vim.fn.json_decode, response)
+    if not ok or not parsed then
+        callback("Failed to parse response: " .. response)
+        return
+    end
+    
+    -- Extract the translation
+    local translation = ""
+    if parsed.candidates and parsed.candidates[1] and 
+       parsed.candidates[1].content and 
+       parsed.candidates[1].content.parts then
+        for _, part in ipairs(parsed.candidates[1].content.parts) do
+            if part.text then
+                translation = translation .. part.text
+            end
+        end
+    end
+    
+    if translation == "" then
+        callback("No translation found in response: " .. response)
+    else
+        callback(translation)
+    end
+end
+
+-- Update the commands module to use this direct test
+local function update_commands_module()
+    local ok, commands = pcall(require, "languages-assistant.commands")
+    if ok then
+        -- Don't do anything here - we'll update the commands separately
+    end
+end
+
+-- Try to update immediately
+update_commands_module()
 
 return M

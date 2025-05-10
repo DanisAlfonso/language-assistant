@@ -63,6 +63,19 @@ function M.setup()
         desc = "Test translation functionality with a predefined phrase"
     })
     
+    -- Add a direct test translation command that uses a more simplified approach
+    vim.api.nvim_create_user_command("LanguageDirectTest", function()
+        local test_text = "It is a long narrow swale"
+        vim.notify("Running DIRECT test translation for: " .. test_text, vim.log.levels.INFO)
+        
+        local target_lang = parent.config.languages.target
+        require("languages-assistant.api").direct_test_translation(test_text, target_lang, function(result)
+            vim.notify("Direct test translation result: " .. result, vim.log.levels.INFO)
+        end)
+    end, {
+        desc = "Test translation using direct API call, bypassing standard processing"
+    })
+    
     -- Create completion commands with shortened aliases
     if parent.config.commands and parent.config.commands.short_aliases then
         vim.api.nvim_create_user_command("LExplain", function()
