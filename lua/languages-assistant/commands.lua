@@ -50,6 +50,19 @@ function M.setup()
         desc = "Test AI service API connection" 
     })
     
+    -- Add a test translation command for debugging
+    vim.api.nvim_create_user_command("LanguageTestTranslate", function()
+        local test_text = "Hello, this is a test translation."
+        vim.notify("Running test translation for: " .. test_text, vim.log.levels.INFO)
+        
+        local target_lang = parent.config.languages.target
+        require("languages-assistant.api").translate_text(test_text, target_lang, function(result)
+            vim.notify("Test translation result: " .. result, vim.log.levels.INFO)
+        end)
+    end, {
+        desc = "Test translation functionality with a predefined phrase"
+    })
+    
     -- Create completion commands with shortened aliases
     if parent.config.commands and parent.config.commands.short_aliases then
         vim.api.nvim_create_user_command("LExplain", function()
