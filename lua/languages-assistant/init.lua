@@ -36,14 +36,34 @@ M.default_config = {
             error = "",
             success = "󰄴",
             warning = ""
+        },
+        flashcards = {
+            card_width = 80,
+            card_padding = 2,
+            hide_scrollbar = true,
+            highlight_current = true,
+            highlight_group = "CursorLine",
         }
     },
     
     -- Storage options
     storage = {
         history_path = vim.fn.stdpath("data") .. "/languages_assistant_history.json",
+        flashcards_path = vim.fn.stdpath("data") .. "/languages_assistant_flashcards.json",
         export_path = vim.fn.expand("~/languages_assistant_flashcards.txt"),
         auto_save = true
+    },
+    
+    -- Flashcards options (FSRS algorithm)
+    flashcards = {
+        target_retention = 0.9, -- 90% target retention rate
+        maximum_interval = 365, -- maximum interval in days
+        learn_ahead_time = 0, -- 0 means only actually due cards are shown
+        minimum_cards_per_session = 20, -- minimum cards to show per session (if available)
+        fuzzy_intervals = true, -- randomize intervals by ±5% for better retention
+        display_retention = true, -- show retention estimate when reviewing
+        default_tags = {"language-learning"}, -- default tags for new cards
+        review_mode = "spaced", -- "spaced" or "random"
     },
     
     -- Keymappings
@@ -54,8 +74,10 @@ M.default_config = {
         translate = "t", -- <leader>lt - translate selection
         history = "h", -- <leader>lh - show history
         export = "x", -- <leader>lx - export flashcards
+        flashcards = "f", -- <leader>lf - study flashcards
+        flashcards_browse = "b", -- <leader>lb - browse all flashcards
         clear = "c", -- <leader>lc - clear history
-        location = "f", -- <leader>lf - show file locations
+        location = "p", -- <leader>lp - show file locations
     },
     
     -- Languages
@@ -86,6 +108,7 @@ M.config = {}
 -- Plugin state
 M.state = {
     history = {},
+    flashcards = {},
     initialized = false
 }
 
@@ -96,7 +119,9 @@ local modules = {
     ui = function() return require("languages-assistant.ui") end,
     commands = function() return require("languages-assistant.commands") end,
     keymaps = function() return require("languages-assistant.keymaps") end,
-    integrations = function() return require("languages-assistant.integrations") end
+    integrations = function() return require("languages-assistant.integrations") end,
+    flashcards = function() return require("languages-assistant.flashcards") end,
+    flashcards_ui = function() return require("languages-assistant.flashcards-ui") end
 }
 
 -- Setup function with configuration
@@ -106,6 +131,9 @@ function M.setup(opts)
     
     -- Initialize history
     modules.history().load()
+    
+    -- Initialize flashcards
+    modules.flashcards().load()
     
     -- Set up commands
     modules.commands().setup()
@@ -177,7 +205,36 @@ function M.translate_text()
         -- Update UI with result - use vim.schedule to defer to a safe context
         vim.schedule(function()
             if vim.api.nvim_buf_is_valid(buf) then
-                modules.ui().update_content(buf, translation)
+                modules.ui().update_content(buf, translation, function() 
+                    -- Add option to convert to flashcard
+                    if vim.api.nvim_buf_is_valid(buf) then
+                        vim.api.nvim_buf_set_lines(buf, -1, -1, false, {
+                            "",
+                            "Press 'f' to add to flashcards or 'q' to close"
+                        })
+                        
+                        -- Add keymapping to create flashcard
+                        vim.api.nvim_buf_set_keymap(buf, 'n', 'f', '', {
+                            noremap = true,
+                            silent = true,
+                            callback = function()
+                                -- Add as flashcard
+                                modules.flashcards().add_card({
+                                    front = text,
+                                    back = translation,
+                                    type = "translation",
+                                    source_lang = M.config.languages.source,
+                                    target_lang = M.config.languages.target,
+                                    created_at = os.date("%Y-%m-%d %H:%M:%S")
+                                })
+                                vim.api.nvim_buf_set_lines(buf, -2, -1, false, {
+                                    "",
+                                    "Added to flashcards successfully! Press 'q' to close."
+                                })
+                            end
+                        })
+                    end
+                end)
                 
                 -- Add to history
                 modules.history().add_entry({
@@ -200,7 +257,7 @@ end
 
 -- Export flashcards in Anki format
 function M.export_flashcards()
-    modules.history().export_flashcards()
+    modules.flashcards().export_flashcards()
 end
 
 -- Utility function to get visual selection

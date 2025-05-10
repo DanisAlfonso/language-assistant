@@ -36,6 +36,27 @@ function M.setup()
         desc = "Export language learning flashcards" 
     })
     
+    -- Flashcards Review command
+    vim.api.nvim_create_user_command("LanguageFlashcards", function()
+        require("languages-assistant.flashcards-ui").review_due_cards()
+    end, { 
+        desc = "Review due flashcards" 
+    })
+    
+    -- Flashcards Browser command
+    vim.api.nvim_create_user_command("LanguageFlashcardsBrowse", function()
+        require("languages-assistant.flashcards-ui").browse_flashcards()
+    end, { 
+        desc = "Browse all flashcards" 
+    })
+    
+    -- Convert history to flashcards command
+    vim.api.nvim_create_user_command("LanguageHistoryToFlashcards", function()
+        require("languages-assistant.flashcards-ui").convert_history_to_flashcards()
+    end, { 
+        desc = "Convert history entries to flashcards" 
+    })
+    
     -- Clear history command
     vim.api.nvim_create_user_command("LanguageClear", function()
         require("languages-assistant.history").clear_history()
@@ -129,6 +150,10 @@ function M.setup()
         vim.api.nvim_create_user_command("LTranslate", function()
             parent.translate_text()
         end, { desc = "Short alias for LanguageTranslate", range = true })
+        
+        vim.api.nvim_create_user_command("LFlash", function()
+            require("languages-assistant.flashcards-ui").review_due_cards()
+        end, { desc = "Short alias for LanguageFlashcards" })
     end
 end
 
@@ -156,7 +181,14 @@ function M.show_configuration_info()
         "",
         "Storage:",
         "  History Path: " .. cfg.storage.history_path,
+        "  Flashcards Path: " .. (cfg.storage.flashcards_path or "Not configured"),
         "  Auto Save: " .. (cfg.storage.auto_save and "Yes" or "No"),
+        "",
+        "Flashcards Settings:",
+        "  Target Retention: " .. (cfg.flashcards and cfg.flashcards.target_retention and 
+            (cfg.flashcards.target_retention * 100) .. "%" or "90%"),
+        "  Maximum Interval: " .. (cfg.flashcards and cfg.flashcards.maximum_interval or "365") .. " days",
+        "  Fuzzy Intervals: " .. (cfg.flashcards and cfg.flashcards.fuzzy_intervals and "Yes" or "No"),
         "",
         "Keymaps:",
         "  Enabled: " .. (cfg.keymaps.enabled and "Yes" or "No"),
@@ -167,6 +199,9 @@ function M.show_configuration_info()
         "  :LanguageTranslate - Translate selected text",
         "  :LanguageHistory - Show learning history",
         "  :LanguageExport - Export flashcards",
+        "  :LanguageFlashcards - Review due flashcards",
+        "  :LanguageFlashcardsBrowse - Browse all flashcards",
+        "  :LanguageHistoryToFlashcards - Convert history to flashcards",
         "  :LanguageInfo - Show this information",
         "  :LanguageTest - Test API connection",
     }
