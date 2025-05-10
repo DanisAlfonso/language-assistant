@@ -4,16 +4,26 @@ local M = {}
 -- Get parent module
 local parent = require("languages-assistant")
 
+-- Cache for API key to avoid retrieving it multiple times
+local api_key_cache = nil
+
 -- Function to safely get the API key from various sources
 local function get_api_key()
+    -- Return cached key if available
+    if api_key_cache then
+        return api_key_cache
+    end
+    
     local config = parent.config.api
     
     -- For Gemini API
     if config.provider == "gemini" then
         -- First try environment variable
         if config.gemini.key_source == "env" then
-            local env_key = vim.env[config.gemini.env_var_name]
-            if env_key and env_key ~= "" then
+            -- Use pcall to catch errors if this happens in a fast event context
+            local ok, env_key = pcall(function() return vim.env[config.gemini.env_var_name] end)
+            if ok and env_key and env_key ~= "" then
+                api_key_cache = env_key
                 return env_key
             end
         end
@@ -23,6 +33,7 @@ local function get_api_key()
             local config_path = config.gemini.config_path
             local ok, config_data = pcall(dofile, config_path)
             if ok and config_data and config_data.gemini_api_key and config_data.gemini_api_key ~= "" then
+                api_key_cache = config_data.gemini_api_key
                 return config_data.gemini_api_key
             end
         end
@@ -32,6 +43,7 @@ local function get_api_key()
             local secrets_path = config.gemini.data_path
             local ok, secrets = pcall(dofile, secrets_path)
             if ok and secrets and secrets.gemini_api_key and secrets.gemini_api_key ~= "" then
+                api_key_cache = secrets.gemini_api_key
                 return secrets.gemini_api_key
             end
         end
@@ -41,8 +53,10 @@ local function get_api_key()
     if config.provider == "openai" then
         -- First try environment variable
         if config.openai.key_source == "env" then
-            local env_key = vim.env[config.openai.env_var_name]
-            if env_key and env_key ~= "" then
+            -- Use pcall to catch errors if this happens in a fast event context
+            local ok, env_key = pcall(function() return vim.env[config.openai.env_var_name] end)
+            if ok and env_key and env_key ~= "" then
+                api_key_cache = env_key
                 return env_key
             end
         end
@@ -460,9 +474,12 @@ NOTES:
             -- Log the error response for debugging
             vim.notify("Translation API error, trying direct method as fallback", vim.log.levels.WARN)
             
-            -- Try the direct method as a fallback
-            M.direct_test_translation(text, target_language, function(direct_result)
-                callback(direct_result)
+            -- Use vim.schedule to ensure safety when using direct method
+            vim.schedule(function()
+                -- Try the direct method as a fallback
+                M.direct_test_translation(text, target_language, function(direct_result)
+                    callback(direct_result)
+                end)
             end)
         else
             -- Log success but with truncated response for brevity
@@ -478,32 +495,38 @@ function M.test_connection(silent)
     silent = silent or false
     local test_query = "Hello, this is a test query to verify API connectivity."
     
-    -- Make a minimal request to test connection
-    make_api_request(test_query, function(response)
-        if response:match("Failed to") or response:match("API Error") or response:match("failed with exit code") then
-            if not silent then
-                vim.notify("API connection test failed: " .. response, vim.log.levels.ERROR)
+    -- Use vim.schedule to ensure we're in a safe context
+    vim.schedule(function()
+        -- Make a minimal request to test connection
+        make_api_request(test_query, function(response)
+            if response:match("Failed to") or response:match("API Error") or response:match("failed with exit code") then
+                if not silent then
+                    vim.notify("API connection test failed: " .. response, vim.log.levels.ERROR)
+                end
+                return false
+            else
+                if not silent then
+                    vim.notify("API connection test successful", vim.log.levels.INFO)
+                end
+                return true
             end
-            return false
-        else
-            if not silent then
-                vim.notify("API connection test successful", vim.log.levels.INFO)
-            end
-            return true
-        end
+        end)
     end)
 end
 
 -- Function to directly test translation with an optimized curl command
 function M.direct_test_translation(text, target_language, callback)
-    local API_KEY = get_api_key()
-    if API_KEY == "" then
-        callback("No API key found")
-        return
-    end
-    
-    -- Format the prompt for translation
-    local formatted_prompt = string.format([[
+    -- Use vim.schedule to ensure we're not in a fast event context
+    vim.schedule(function()
+        -- Try to get API key from cache first
+        local API_KEY = get_api_key()
+        if API_KEY == "" then
+            callback("No API key found")
+            return
+        end
+        
+        -- Format the prompt for translation
+        local formatted_prompt = string.format([[
 Translate the following text from %s into %s:
 
 "%s"
@@ -520,70 +543,71 @@ NOTES:
 - Any cultural context important for understanding
 ]], parent.config.languages.source, target_language, text)
 
-    -- Create request body JSON
-    local request_body = vim.fn.json_encode({
-        contents = {
-            {
-                parts = {
-                    { text = formatted_prompt }
+        -- Create request body JSON
+        local request_body = vim.fn.json_encode({
+            contents = {
+                {
+                    parts = {
+                        { text = formatted_prompt }
+                    }
                 }
             }
-        }
-    })
-    
-    -- Create a temp file for the response
-    local temp_file = vim.fn.tempname()
-    
-    -- Build the curl command
-    local cmd = string.format(
-        "curl -s -X POST 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s' -H 'Content-Type: application/json' -d '%s' > %s",
-        API_KEY,
-        request_body:gsub("'", "\\'"),
-        temp_file
-    )
-    
-    -- Log the command for debugging (with API key masked)
-    local masked_cmd = cmd:gsub(API_KEY, "***API_KEY***")
-    vim.notify("Direct test command: " .. masked_cmd, vim.log.levels.DEBUG)
-    
-    -- Run the curl command directly
-    vim.fn.system(cmd)
-    
-    -- Read the response
-    local file = io.open(temp_file, "r")
-    if not file then
-        callback("Failed to read response file")
-        return
-    end
-    
-    local response = file:read("*all")
-    file:close()
-    os.remove(temp_file)
-    
-    -- Try to parse the response
-    local ok, parsed = pcall(vim.fn.json_decode, response)
-    if not ok or not parsed then
-        callback("Failed to parse response: " .. response)
-        return
-    end
-    
-    -- Extract the translation
-    local translation = ""
-    if parsed.candidates and parsed.candidates[1] and 
-       parsed.candidates[1].content and 
-       parsed.candidates[1].content.parts then
-        for _, part in ipairs(parsed.candidates[1].content.parts) do
-            if part.text then
-                translation = translation .. part.text
+        })
+        
+        -- Create a temp file for the response
+        local temp_file = vim.fn.tempname()
+        
+        -- Build the curl command
+        local cmd = string.format(
+            "curl -s -X POST 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s' -H 'Content-Type: application/json' -d '%s' > %s",
+            API_KEY,
+            request_body:gsub("'", "\\'"),
+            temp_file
+        )
+        
+        -- Log the command for debugging (with API key masked)
+        local masked_cmd = cmd:gsub(API_KEY, "***API_KEY***")
+        vim.notify("Direct test command: " .. masked_cmd, vim.log.levels.DEBUG)
+        
+        -- Run the curl command directly
+        vim.fn.system(cmd)
+        
+        -- Read the response
+        local file = io.open(temp_file, "r")
+        if not file then
+            callback("Failed to read response file")
+            return
+        end
+        
+        local response = file:read("*all")
+        file:close()
+        os.remove(temp_file)
+        
+        -- Try to parse the response
+        local ok, parsed = pcall(vim.fn.json_decode, response)
+        if not ok or not parsed then
+            callback("Failed to parse response: " .. response)
+            return
+        end
+        
+        -- Extract the translation
+        local translation = ""
+        if parsed.candidates and parsed.candidates[1] and 
+           parsed.candidates[1].content and 
+           parsed.candidates[1].content.parts then
+            for _, part in ipairs(parsed.candidates[1].content.parts) do
+                if part.text then
+                    translation = translation .. part.text
+                end
             end
         end
-    end
-    
-    if translation == "" then
-        callback("No translation found in response: " .. response)
-    else
-        callback(translation)
-    end
+        
+        if translation == "" then
+            callback("No translation found in response: " .. response)
+        else
+            callback(translation)
+        end
+    end)
 end
 
 -- Update the commands module to use this direct test
