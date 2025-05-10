@@ -53,6 +53,11 @@ function M.create_floating_window(title)
     vim.api.nvim_win_set_option(win, "conceallevel", 2)
     vim.api.nvim_win_set_option(win, "wrap", true)
     
+    -- Enable proper word wrapping to prevent words from being split
+    vim.api.nvim_win_set_option(win, "linebreak", true)
+    vim.api.nvim_win_set_option(win, "breakindent", true)
+    vim.api.nvim_win_set_option(win, "breakindentopt", "shift:2")
+    
     -- Add keybindings to close window
     vim.api.nvim_buf_set_keymap(buf, "n", "q", ":q<CR>", { noremap = true, silent = true })
     vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", ":q<CR>", { noremap = true, silent = true })
@@ -95,6 +100,15 @@ function M.update_content(buf, content)
     local ok, is_valid = pcall(vim.api.nvim_buf_is_valid, buf)
     if not ok or not is_valid then return end
     
+    -- Get window ID associated with this buffer (if any)
+    local win_id = nil
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if pcall(function() return vim.api.nvim_win_get_buf(w) == buf end) then
+            win_id = w
+            break
+        end
+    end
+    
     -- Perform all buffer operations inside pcall
     local ok, err = pcall(function()
         -- Make buffer modifiable
@@ -104,6 +118,12 @@ function M.update_content(buf, content)
         local lines = {}
         for line in content:gmatch("[^\r\n]+") do
             table.insert(lines, line)
+        end
+        
+        -- Get window width if available for text formatting decisions
+        local win_width = 80 -- default
+        if win_id and pcall(vim.api.nvim_win_get_width, win_id) then
+            win_width = vim.api.nvim_win_get_width(win_id) - 4 -- account for margins
         end
         
         -- Add some styling to the content by adding blank lines and formatting
@@ -120,8 +140,10 @@ function M.update_content(buf, content)
                 
                 section = line:match("^([A-Z][A-Z%s]+):")
                 
-                -- Add styled section heading
-                table.insert(styled_lines, "── " .. line .. " ──────────────────────")
+                -- Add styled section heading (with width that fits window)
+                local header_width = math.min(win_width - 6, 60) -- limit header width
+                local separator = string.rep("─", header_width - #line - 4)
+                table.insert(styled_lines, "── " .. line .. " " .. separator)
             else
                 -- Process section content differently based on section
                 if section == "EXAMPLES" then
@@ -134,8 +156,12 @@ function M.update_content(buf, content)
                     else
                         table.insert(styled_lines, line)
                     end
+                elseif line:match("^%s*[•●]%s") then
+                    -- Format bullet points with better indentation and optional wrapping
+                    -- Keep bullet points with original formatting
+                    table.insert(styled_lines, "  " .. line)
                 elseif line:match("^%s*-%s") then
-                    -- Format bullet points with better indentation
+                    -- Format dash bullet points with better indentation
                     table.insert(styled_lines, "  " .. line)
                 else
                     table.insert(styled_lines, line)

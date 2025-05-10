@@ -97,6 +97,22 @@ function M.setup()
         desc = "Toggle between Spanish→English and English→Spanish translation"
     })
     
+    -- Add a command to adjust window width
+    vim.api.nvim_create_user_command("LanguageWindowWidth", function(opts)
+        local width = tonumber(opts.args)
+        if not width or width < 40 or width > 120 then
+            vim.notify("Please specify a width between 40 and 120 characters", vim.log.levels.WARN)
+            return
+        end
+        
+        -- Update window width setting
+        parent.config.ui.window.width = width
+        vim.notify("Window width set to " .. width .. " characters", vim.log.levels.INFO)
+    end, {
+        desc = "Set the width of language assistant windows",
+        nargs = 1
+    })
+    
     -- Create completion commands with shortened aliases
     if parent.config.commands and parent.config.commands.short_aliases then
         vim.api.nvim_create_user_command("LExplain", function()
