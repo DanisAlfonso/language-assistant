@@ -106,8 +106,48 @@ function M.update_content(buf, content)
             table.insert(lines, line)
         end
         
+        -- Add some styling to the content by adding blank lines and formatting
+        local styled_lines = {}
+        local section = ""
+        
+        for _, line in ipairs(lines) do
+            -- Check if this is a heading (section title)
+            if line:match("^[A-Z][A-Z%s]+:$") then
+                -- Add a blank line before each section except the first
+                if #styled_lines > 0 then
+                    table.insert(styled_lines, "")
+                end
+                
+                section = line:match("^([A-Z][A-Z%s]+):")
+                
+                -- Add styled section heading
+                table.insert(styled_lines, "── " .. line .. " ──────────────────────")
+            else
+                -- Process section content differently based on section
+                if section == "EXAMPLES" then
+                    -- Don't modify example lines
+                    table.insert(styled_lines, line)
+                elseif section == "PRONUNCIATION" or section == "PRONUNCIATION GUIDE" then
+                    -- Enhance IPA content
+                    if line:match("%[.+%]") then
+                        table.insert(styled_lines, "  " .. line) -- Indent IPA
+                    else
+                        table.insert(styled_lines, line)
+                    end
+                elseif line:match("^%s*-%s") then
+                    -- Format bullet points with better indentation
+                    table.insert(styled_lines, "  " .. line)
+                else
+                    table.insert(styled_lines, line)
+                end
+            end
+        end
+        
         -- Update buffer
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, styled_lines)
+        
+        -- Add syntax highlighting for markdown
+        vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
         
         -- Make buffer non-modifiable again
         vim.api.nvim_buf_set_option(buf, "modifiable", false)

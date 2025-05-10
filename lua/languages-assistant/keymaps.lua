@@ -18,6 +18,7 @@ function M.setup()
         { "n", prefix .. cfg.export, ":LanguageExport<CR>", "Export flashcards" },
         { "n", prefix .. cfg.clear, ":LanguageClear<CR>", "Clear history" },
         { "n", prefix .. cfg.location, ":LanguageInfo<CR>", "Show configuration info" },
+        { "n", prefix .. "d", ":LanguageToggleDirection<CR>", "Toggle translation direction" },
     }
     
     -- Register keymaps

@@ -387,13 +387,46 @@ end
 
 -- Function to get explanation for a word or phrase
 function M.get_explanation(text, callback)
-    -- Format the message to get a structured response for vocabulary
-    local formatted_prompt = string.format([[
+    -- Format the prompt differently based on learning focus
+    local formatted_prompt = ""
+    
+    if parent.config.languages.learning_focus == "english" then
+        -- Format the message to get a structured response for English vocabulary
+        formatted_prompt = string.format([[
+I'm a native Spanish speaker learning English and I need a detailed explanation of this English word/phrase: %s
+
+Please respond with this exact format:
+EXPLANATION:
+[Clear definition of the word/phrase]
+
+PRONUNCIATION:
+[IPA pronunciation]
+
+EXAMPLES:
+1. [First example sentence showing usage in context]
+2. [Second example with perhaps a different context or meaning]
+3. [Third example showing common usage or an idiom if applicable]
+
+GRAMMAR AND USAGE:
+- Word type: [noun/verb/adjective/etc. and any irregular forms]
+- Register: [formal/informal/slang/technical]
+- Collocations: [words commonly used with this term]
+- Similar words: [synonyms and their subtle differences]
+
+SPANISH CONNECTION:
+[Brief note about Spanish equivalents or false friends]
+]], text)
+    else
+        -- Default explanation format
+        formatted_prompt = string.format([[
 I'm learning English and I need help understanding the following word or phrase: %s
 
 Please respond with this exact format:
 EXPLANATION:
 [Clear definition of the word/phrase]
+
+PRONUNCIATION:
+[IPA pronunciation]
 
 EXAMPLES:
 1. [First example sentence showing usage]
@@ -405,6 +438,7 @@ NOTES:
 - Origin: [brief etymology if relevant]
 - Common mistakes: [how people often misuse this term, if applicable]
 ]], text)
+    end
     
     -- Show a notification that we're requesting
     vim.notify("Requesting explanation for: " .. text, vim.log.levels.INFO)
@@ -443,8 +477,49 @@ end
 
 -- Function to translate text to target language
 function M.translate_text(text, target_language, callback)
-    -- Format the prompt for translation
-    local formatted_prompt = string.format([[
+    -- Customize prompt based on language direction
+    local formatted_prompt = ""
+    
+    -- Check if we're translating from Spanish to English (for language learning)
+    if parent.config.languages.source == "es" and target_language == "en" then
+        formatted_prompt = string.format([[
+Translate the following Spanish text into English:
+
+"%s"
+
+Please respond with this exact format:
+TRANSLATION:
+[Your translation]
+
+PRONUNCIATION GUIDE:
+[Include the International Phonetic Alphabet (IPA) pronunciation for the English translation]
+
+NOTES:
+- Usage context: How and when this phrase/word is commonly used in English
+- Register: Is this formal, informal, slang, technical, etc.
+- Collocations: Common word combinations with this term
+- Similar expressions: Related phrases or synonyms in English
+]], text)
+    
+    -- Check if we're translating from English to Spanish (for understanding)
+    elseif parent.config.languages.source == "en" and target_language == "es" then
+        formatted_prompt = string.format([[
+Translate the following English text into Spanish:
+
+"%s"
+
+Please respond with this exact format:
+TRANSLATION:
+[Your translation]
+
+NOTES:
+- Any cultural context important for understanding
+- Regional variations if relevant
+]], text)
+    
+    -- Default format for other language combinations
+    else
+        formatted_prompt = string.format([[
 Translate the following text from %s into %s:
 
 "%s"
@@ -454,12 +529,13 @@ TRANSLATION:
 [Your translation]
 
 PRONUNCIATION GUIDE:
-[Brief pronunciation help if needed]
+[Brief pronunciation help using International Phonetic Alphabet (IPA)]
 
 NOTES:
-- Alternative translations (if applicable)
+- Usage context and common expressions
 - Any cultural context important for understanding
 ]], parent.config.languages.source, target_language, text)
+    end
     
     -- Show a notification that we're requesting
     vim.notify("Translating to " .. target_language .. ": " .. text, vim.log.levels.INFO)
@@ -525,8 +601,49 @@ function M.direct_test_translation(text, target_language, callback)
             return
         end
         
-        -- Format the prompt for translation
-        local formatted_prompt = string.format([[
+        -- Customize prompt based on language direction
+        local formatted_prompt = ""
+        
+        -- Check if we're translating from Spanish to English (for language learning)
+        if parent.config.languages.source == "es" and target_language == "en" then
+            formatted_prompt = string.format([[
+Translate the following Spanish text into English:
+
+"%s"
+
+Please respond with this exact format:
+TRANSLATION:
+[Your translation]
+
+PRONUNCIATION GUIDE:
+[Include the International Phonetic Alphabet (IPA) pronunciation for the English translation]
+
+NOTES:
+- Usage context: How and when this phrase/word is commonly used in English
+- Register: Is this formal, informal, slang, technical, etc.
+- Collocations: Common word combinations with this term
+- Similar expressions: Related phrases or synonyms in English
+]], text)
+        
+        -- Check if we're translating from English to Spanish (for understanding)
+        elseif parent.config.languages.source == "en" and target_language == "es" then
+            formatted_prompt = string.format([[
+Translate the following English text into Spanish:
+
+"%s"
+
+Please respond with this exact format:
+TRANSLATION:
+[Your translation]
+
+NOTES:
+- Any cultural context important for understanding
+- Regional variations if relevant
+]], text)
+        
+        -- Default format for other language combinations
+        else
+            formatted_prompt = string.format([[
 Translate the following text from %s into %s:
 
 "%s"
@@ -536,13 +653,14 @@ TRANSLATION:
 [Your translation]
 
 PRONUNCIATION GUIDE:
-[Brief pronunciation help if needed]
+[Brief pronunciation help using International Phonetic Alphabet (IPA)]
 
 NOTES:
-- Alternative translations (if applicable)
+- Usage context and common expressions
 - Any cultural context important for understanding
 ]], parent.config.languages.source, target_language, text)
-
+        end
+        
         -- Create request body JSON
         local request_body = vim.fn.json_encode({
             contents = {

@@ -60,9 +60,11 @@ M.default_config = {
     
     -- Languages
     languages = {
-        source = "en", -- Source language
-        target = "es", -- Target language for translations
-        additional = {} -- Additional languages to support
+        source = "es", -- Source language (Spanish)
+        target = "en", -- Target language (English)
+        additional = {}, -- Additional languages to support
+        native_speaker = true, -- If user is a native speaker of source language
+        learning_focus = "english" -- Focus on English learning
     },
     
     -- Integrations

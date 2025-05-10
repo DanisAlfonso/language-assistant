@@ -76,6 +76,27 @@ function M.setup()
         desc = "Test translation using direct API call, bypassing standard processing"
     })
     
+    -- Add a command to toggle translation direction
+    vim.api.nvim_create_user_command("LanguageToggleDirection", function()
+        local current_source = parent.config.languages.source
+        local current_target = parent.config.languages.target
+        
+        -- Swap the languages
+        parent.config.languages.source = current_target
+        parent.config.languages.target = current_source
+        
+        -- Set learning focus based on target language
+        if parent.config.languages.target == "en" then
+            parent.config.languages.learning_focus = "english"
+            vim.notify("Switched to Spanish → English mode (English learning)", vim.log.levels.INFO)
+        else
+            parent.config.languages.learning_focus = "translation"
+            vim.notify("Switched to English → Spanish mode (Translation only)", vim.log.levels.INFO)
+        end
+    end, {
+        desc = "Toggle between Spanish→English and English→Spanish translation"
+    })
+    
     -- Create completion commands with shortened aliases
     if parent.config.commands and parent.config.commands.short_aliases then
         vim.api.nvim_create_user_command("LExplain", function()
