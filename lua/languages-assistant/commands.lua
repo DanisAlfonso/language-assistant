@@ -36,6 +36,13 @@ function M.setup()
         desc = "Export language learning flashcards" 
     })
     
+    -- Clear history command
+    vim.api.nvim_create_user_command("LanguageClear", function()
+        require("languages-assistant.history").clear_history()
+    end, { 
+        desc = "Clear language learning history" 
+    })
+    
     -- Configuration info command
     vim.api.nvim_create_user_command("LanguageInfo", function()
         M.show_configuration_info()

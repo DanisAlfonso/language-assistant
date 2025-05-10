@@ -202,6 +202,8 @@ function M.show_history_window()
     local lines = {}
     table.insert(lines, "# Language Learning History")
     table.insert(lines, "")
+    table.insert(lines, "Press 'c' to clear history, 'q' or <Esc> to close")
+    table.insert(lines, "")
     
     -- Add history entries
     for i, entry in ipairs(history) do
@@ -212,9 +214,23 @@ function M.show_history_window()
             break
         end
         
-        table.insert(lines, "## " .. i .. ". " .. entry.text)
+        -- Add a section for this entry
+        table.insert(lines, "## " .. i .. ". " .. entry.text:gsub("\n", " "))
         table.insert(lines, "")
-        table.insert(lines, entry.result:sub(1, 80) .. (entry.result:len() > 80 and "..." or ""))
+        
+        -- Process result to avoid newlines in each line
+        -- Get just the first line or a short summary
+        local result_preview = ""
+        local first_line = entry.result:match("^([^\n\r]+)")
+        if first_line then
+            -- Get first line and truncate it if too long
+            result_preview = first_line:sub(1, 80) .. (first_line:len() > 80 and "..." or "")
+        else
+            -- If no clear first line, just get the first part and truncate
+            result_preview = entry.result:sub(1, 80):gsub("\n", " ") .. "..."
+        end
+        
+        table.insert(lines, result_preview)
         table.insert(lines, "")
         table.insert(lines, "*" .. entry.timestamp .. "*")
         table.insert(lines, "")
@@ -223,9 +239,18 @@ function M.show_history_window()
     end
     
     -- Set content
-    vim.api.nvim_buf_set_option(buf, "modifiable", true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    pcall(function()
+        vim.api.nvim_buf_set_option(buf, "modifiable", true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        
+        -- Add mapping to clear history
+        vim.api.nvim_buf_set_keymap(buf, "n", "c", 
+            ":lua require('languages-assistant.history').clear_history()<CR>", 
+            { noremap = true, silent = true, desc = "Clear history" }
+        )
+        
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    end)
 end
 
 return M

@@ -116,4 +116,44 @@ function M.export_flashcards()
     return true
 end
 
+-- Clear history
+function M.clear_history()
+    -- Ask for confirmation
+    vim.ui.select(
+        { "Yes", "No" },
+        { prompt = "Are you sure you want to clear all history?" },
+        function(choice)
+            if choice == "Yes" then
+                -- Clear the history
+                parent.state.history = {}
+                
+                -- Save the empty history to file
+                if M.save() then
+                    vim.notify("History has been cleared", vim.log.levels.INFO)
+                    
+                    -- Close any history window that might be open
+                    for _, win in ipairs(vim.api.nvim_list_wins()) do
+                        local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
+                        if ok then
+                            local ok, buf_name = pcall(vim.api.nvim_buf_get_name, buf)
+                            if ok and buf_name and buf_name:match("Language Learning History") then
+                                pcall(vim.api.nvim_win_close, win, true)
+                            end
+                        end
+                    end
+                    
+                    -- If we can't find a window to close, reopen the history window to show it's empty
+                    vim.defer_fn(function()
+                        require("languages-assistant").show_history()
+                    end, 100)
+                else
+                    vim.notify("Failed to save cleared history", vim.log.levels.ERROR)
+                end
+            end
+        end
+    )
+    
+    return true
+end
+
 return M
