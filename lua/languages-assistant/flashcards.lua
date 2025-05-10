@@ -400,8 +400,16 @@ function M.convert_history_to_flashcards()
   local count = 0
   local added_phrases = {}
   
+  -- First, build a map of existing flashcards for quick lookup
+  local existing_cards = {}
+  for _, card in ipairs(parent.state.flashcards) do
+    existing_cards[card.front] = true
+  end
+  
   for _, entry in ipairs(parent.state.history) do
-    if entry.type == "translation" and entry.text and entry.result and not added_phrases[entry.text] then
+    if entry.type == "translation" and entry.text and entry.result 
+       and not added_phrases[entry.text] 
+       and not existing_cards[entry.text] then -- Skip if already exists as a flashcard
       local card_data = {
         front = entry.text,
         back = entry.result,
@@ -419,7 +427,12 @@ function M.convert_history_to_flashcards()
     end
   end
   
-  vim.notify("Converted " .. count .. " history entries to flashcards", vim.log.levels.INFO)
+  if count > 0 then
+    vim.notify("Converted " .. count .. " history entries to flashcards", vim.log.levels.INFO)
+  else
+    vim.notify("No new history entries to convert (all already exist as flashcards)", vim.log.levels.INFO)
+  end
+  
   return count
 end
 

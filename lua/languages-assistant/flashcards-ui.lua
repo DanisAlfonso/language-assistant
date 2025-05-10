@@ -417,9 +417,10 @@ function M.render_current_card()
     table.insert(card_lines, pad_str .. "Tags: " .. tags_text)
   end
   
-  -- Add help text at the bottom
+  -- Add responsive help text at the bottom that adapts to window width
   table.insert(card_lines, "")
-  table.insert(card_lines, pad_str .. "j/k: navigate    space: flip    1-4: rate    e: edit    q: quit")
+  local help_text = M.get_responsive_help_text(win_width - (padding * 2))
+  table.insert(card_lines, pad_str .. help_text)
   
   -- Add all lines to buffer
   vim.api.nvim_buf_set_lines(buf, #header_lines, -1, false, card_lines)
@@ -461,6 +462,104 @@ function M.render_header()
   table.insert(header_lines, "")
   
   return header_lines
+end
+
+-- Generate help text that fits the available width
+function M.get_responsive_help_text(available_width)
+  -- All commands we want to display
+  local commands = {
+    {"j/k", "navigate"},
+    {"space", "flip"},
+    {"1-4", "rate"},
+    {"e", "edit"},
+    {"d", "delete"},
+    {"q", "quit"}
+  }
+  
+  -- Full text would be: "j/k: navigate    space: flip    1-4: rate    e: edit    d: delete    q: quit"
+  -- Calculate if it fits
+  local spacer = "    "
+  local full_text = ""
+  for i, cmd in ipairs(commands) do
+    full_text = full_text .. cmd[1] .. ": " .. cmd[2]
+    if i < #commands then
+      full_text = full_text .. spacer
+    end
+  end
+  
+  -- If full text fits, use it
+  if vim.fn.strdisplaywidth(full_text) <= available_width then
+    return full_text
+  end
+  
+  -- If not, let's try shorter descriptions with smaller spacers
+  spacer = "  "
+  full_text = ""
+  for i, cmd in ipairs(commands) do
+    full_text = full_text .. cmd[1] .. ": " .. cmd[2]
+    if i < #commands then
+      full_text = full_text .. spacer
+    end
+  end
+  
+  -- If it fits now, use this
+  if vim.fn.strdisplaywidth(full_text) <= available_width then
+    return full_text
+  end
+  
+  -- If still too wide, use a compact format
+  full_text = ""
+  for i, cmd in ipairs(commands) do
+    full_text = full_text .. cmd[1] .. ":" .. cmd[2]
+    if i < #commands then
+      full_text = full_text .. " "
+    end
+  end
+  
+  -- If it fits now, use this
+  if vim.fn.strdisplaywidth(full_text) <= available_width then
+    return full_text
+  end
+  
+  -- Last resort: show commands on multiple lines
+  -- We'll return the first set of commands that fits
+  local first_line = ""
+  local remaining_commands = {}
+  
+  for i, cmd in ipairs(commands) do
+    local next_part = cmd[1] .. ": " .. cmd[2]
+    if i < #commands then
+      next_part = next_part .. spacer
+    end
+    
+    if vim.fn.strdisplaywidth(first_line .. next_part) <= available_width then
+      first_line = first_line .. next_part
+    else
+      table.insert(remaining_commands, cmd)
+    end
+  end
+  
+  -- If we have a subset of commands that fit, show those
+  if #remaining_commands == 0 or vim.fn.strdisplaywidth(first_line) == 0 then
+    -- Either everything fit, or nothing fit 
+    -- Just return what we have as best effort
+    return first_line
+  end
+  
+  -- Otherwise, create a second line for the remaining commands
+  -- and add it to the display
+  local second_line = ""
+  for i, cmd in ipairs(remaining_commands) do
+    second_line = second_line .. cmd[1] .. ": " .. cmd[2]
+    if i < #remaining_commands then
+      second_line = second_line .. spacer
+    end
+  end
+  
+  -- Insert the second line before returning
+  table.insert(card_lines, pad_str .. second_line)
+  
+  return first_line
 end
 
 -- Custom highlighting for the improved UI
@@ -713,17 +812,24 @@ function M.edit_current_card()
         }, function(back)
           if back then
             -- Update the card
-            flashcards.edit_card(card.id, {
+            local success = flashcards.edit_card(card.id, {
               front = front,
               back = back
             })
             
-            -- Update local copy
-            card.front = front
-            card.back = back
-            
-            -- Re-render
-            M.render_current_card()
+            if success then
+              -- Update local copy
+              card.front = front
+              card.back = back
+              
+              -- Re-render
+              M.render_current_card()
+              
+              -- Show success notification
+              vim.notify("Card updated successfully", vim.log.levels.INFO)
+            else
+              vim.notify("Failed to update card", vim.log.levels.ERROR)
+            end
           end
         end)
       end
@@ -765,7 +871,12 @@ function M.delete_current_card()
           
           -- Render
           M.render_current_card()
+          
+          -- Show success notification
+          vim.notify("Card deleted successfully", vim.log.levels.INFO)
         end
+      else
+        vim.notify("Failed to delete card", vim.log.levels.ERROR)
       end
     end
   end)
