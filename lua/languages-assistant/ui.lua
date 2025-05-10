@@ -202,8 +202,11 @@ function M.show_history_window()
     local lines = {}
     table.insert(lines, "# Language Learning History")
     table.insert(lines, "")
-    table.insert(lines, "Press 'c' to clear history, 'q' or <Esc> to close")
+    table.insert(lines, "Press <Enter> to view details, 'c' to clear history, 'q' or <Esc> to close")
     table.insert(lines, "")
+    
+    -- Define entry line numbers for interaction
+    local entry_lines = {}
     
     -- Add history entries
     for i, entry in ipairs(history) do
@@ -214,8 +217,19 @@ function M.show_history_window()
             break
         end
         
-        -- Add a section for this entry
-        table.insert(lines, "## " .. i .. ". " .. entry.text:gsub("\n", " "))
+        -- Store the line number for this entry
+        entry_lines[#lines + 1] = i
+        
+        -- Add a section for this entry with fancier formatting
+        local entry_type_icon = "📝" -- Default icon
+        if entry.type == "translation" then
+            entry_type_icon = "🔄"
+        elseif entry.type == "explanation" then
+            entry_type_icon = "📚"
+        end
+        
+        local entry_title = "## " .. entry_type_icon .. " " .. i .. ". " .. entry.text:gsub("\n", " ")
+        table.insert(lines, entry_title)
         table.insert(lines, "")
         
         -- Process result to avoid newlines in each line
@@ -230,9 +244,14 @@ function M.show_history_window()
             result_preview = entry.result:sub(1, 80):gsub("\n", " ") .. "..."
         end
         
-        table.insert(lines, result_preview)
+        -- Add a fancy quote-style preview
+        table.insert(lines, "> " .. result_preview)
         table.insert(lines, "")
-        table.insert(lines, "*" .. entry.timestamp .. "*")
+        
+        -- Add metadata with a visual indicator for interactive elements
+        local date_parts = entry.timestamp:match("(%d+%-%d+%-%d+) (%d+:%d+:%d+)")
+        local formatted_date = date_parts and date_parts or entry.timestamp
+        table.insert(lines, "*" .. formatted_date .. "* · [**Click to view full details**]")
         table.insert(lines, "")
         table.insert(lines, "---")
         table.insert(lines, "")
@@ -249,8 +268,179 @@ function M.show_history_window()
             { noremap = true, silent = true, desc = "Clear history" }
         )
         
+        -- Save the history data in the buffer for reference
+        vim.api.nvim_buf_set_var(buf, "language_history", history)
+        vim.api.nvim_buf_set_var(buf, "entry_lines", entry_lines)
+        
+        -- Add mapping to view entry details
+        vim.api.nvim_buf_set_keymap(buf, "n", "<CR>", 
+            ":lua require('languages-assistant.ui').show_history_entry_details()<CR>", 
+            { noremap = true, silent = true, desc = "View entry details" }
+        )
+        
         vim.api.nvim_buf_set_option(buf, "modifiable", false)
     end)
+end
+
+-- Show details for a specific history entry
+function M.show_history_entry_details()
+    -- Get current buffer and cursor position
+    local buf = vim.api.nvim_get_current_buf()
+    local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+    
+    -- Get entry lines and history from buffer variables
+    local ok, entry_lines = pcall(vim.api.nvim_buf_get_var, buf, "entry_lines")
+    if not ok then
+        vim.notify("Could not get entry line information", vim.log.levels.ERROR)
+        return
+    end
+    
+    local ok, history = pcall(vim.api.nvim_buf_get_var, buf, "language_history")
+    if not ok then
+        vim.notify("Could not get history information", vim.log.levels.ERROR)
+        return
+    end
+    
+    -- Find which entry we're on
+    local entry_index = nil
+    for line, idx in pairs(entry_lines) do
+        -- Check if cursor is on or after this line and before the next entry line
+        if cursor_line >= line then
+            -- Find the next entry line
+            local next_line = nil
+            for l, _ in pairs(entry_lines) do
+                if l > line and (next_line == nil or l < next_line) then
+                    next_line = l
+                end
+            end
+            
+            -- If cursor is before the next entry line or there is no next entry
+            if next_line == nil or cursor_line < next_line then
+                entry_index = idx
+            end
+        end
+    end
+    
+    -- If we found an entry, show its details
+    if entry_index and history[entry_index] then
+        local entry = history[entry_index]
+        
+        -- We have two options for showing the details:
+        -- 1. New floating window
+        -- 2. Replace current window content with details view
+        
+        -- Option 1: Show in a new floating window (better for comparing entries)
+        local entry_type_icon = "📝" -- Default icon
+        if entry.type == "translation" then
+            entry_type_icon = "🔄"
+        elseif entry.type == "explanation" then
+            entry_type_icon = "📚"
+        end
+        
+        local window_title = entry_type_icon .. " " .. entry.text:sub(1, 30)
+        if #entry.text > 30 then window_title = window_title .. "..." end
+        
+        -- Get a larger window size for details
+        local config = vim.deepcopy(parent.config.ui.window)
+        config.width = math.min(config.width + 20, 120) -- Wider window for details
+        config.height = math.min(config.height + 10, 40) -- Taller window for details
+        
+        local detail_buf, detail_win = M.create_floating_window(window_title)
+        
+        -- Prepare content for the detail view
+        local entry_type = entry.type or "unknown"
+        local detail_lines = {}
+        
+        -- Common header with fancy formatting
+        table.insert(detail_lines, "# " .. entry_type_icon .. " " .. entry.text)
+        table.insert(detail_lines, "")
+        
+        -- Pretty timestamp with additional info
+        local date_parts = entry.timestamp:match("(%d+%-%d+%-%d+) (%d+:%d+:%d+)")
+        local formatted_date = date_parts and date_parts or entry.timestamp
+        
+        local type_name = "Unknown"
+        if entry_type == "translation" then
+            type_name = "Translation"
+        elseif entry_type == "explanation" then
+            type_name = "Vocabulary Lookup"
+        end
+        
+        table.insert(detail_lines, "*" .. type_name .. " · " .. formatted_date .. "*")
+        table.insert(detail_lines, "")
+        table.insert(detail_lines, "---")
+        table.insert(detail_lines, "")
+        
+        -- Format based on entry type
+        if entry_type == "translation" then
+            -- Source section
+            table.insert(detail_lines, "## Source Text (" .. (entry.source_lang or "unknown") .. ")")
+            table.insert(detail_lines, "")
+            table.insert(detail_lines, "> " .. entry.text)
+            table.insert(detail_lines, "")
+            
+            -- Translation section
+            table.insert(detail_lines, "## Translation (" .. (entry.target_lang or "unknown") .. ")")
+            table.insert(detail_lines, "")
+        elseif entry_type == "explanation" then
+            -- Explanation section
+            table.insert(detail_lines, "## Explanation")
+            table.insert(detail_lines, "")
+        end
+        
+        -- Process the result content with proper section formatting
+        local current_section = ""
+        local in_code_block = false
+        
+        for line in entry.result:gmatch("[^\r\n]+") do
+            -- Check if this line is a section header
+            local section_match = line:match("^([A-Z][A-Z%s]+):$")
+            
+            if section_match then
+                -- This is a new section
+                current_section = section_match
+                table.insert(detail_lines, "### " .. section_match)
+                table.insert(detail_lines, "")
+            elseif line:match("^```") then
+                -- Handle code blocks
+                in_code_block = not in_code_block
+                table.insert(detail_lines, line)
+            elseif in_code_block then
+                -- Preserve code block content
+                table.insert(detail_lines, line)
+            elseif line:match("^%s*[•●]%s") or line:match("^%d+%.%s") then
+                -- Bullet points - add some indentation
+                table.insert(detail_lines, line)
+            elseif line:match("^%s*-%s") then
+                -- List items - add some indentation
+                table.insert(detail_lines, line)
+            else
+                -- Regular content
+                table.insert(detail_lines, line)
+            end
+        end
+        
+        -- Set the content
+        pcall(function()
+            vim.api.nvim_buf_set_option(detail_buf, "modifiable", true)
+            vim.api.nvim_buf_set_lines(detail_buf, 0, -1, false, detail_lines)
+            
+            -- Set filetype for syntax highlighting
+            vim.api.nvim_buf_set_option(detail_buf, "filetype", "markdown")
+            
+            -- Add keymapping to close window
+            vim.api.nvim_buf_set_keymap(detail_buf, "n", "q", ":q<CR>", 
+                { noremap = true, silent = true, desc = "Close window" }
+            )
+            vim.api.nvim_buf_set_keymap(detail_buf, "n", "<Esc>", ":q<CR>", 
+                { noremap = true, silent = true, desc = "Close window" }
+            )
+            
+            vim.api.nvim_buf_set_option(detail_buf, "modifiable", false)
+        end)
+    else
+        vim.notify("No entry found at this position", vim.log.levels.WARN)
+    end
 end
 
 return M
